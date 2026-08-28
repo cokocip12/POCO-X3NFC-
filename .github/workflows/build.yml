@@ -1,0 +1,249 @@
+name: SPECTRA Surya A13 - Clean Kernel
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+
+    steps:
+
+      # ==========================================
+      # 1. CHECKOUT KERNEL
+      # ==========================================
+      - name: Checkout Kernel
+        uses: actions/checkout@v4
+        with:
+          repository: r0ttenbeef/android_kernel_xiaomi_surya
+          ref: lineage-20
+          path: kernel
+          fetch-depth: 1
+
+      # ==========================================
+      # 2. DEPENDENCIES
+      # ==========================================
+      - name: Install Dependencies
+        run: |
+          sudo apt-get update
+
+          sudo apt-get install -y \
+            bc \
+            bison \
+            flex \
+            build-essential \
+            libssl-dev \
+            libelf-dev \
+            libncurses5-dev \
+            libncurses-dev \
+            cpio \
+            git \
+            curl \
+            wget \
+            zip \
+            unzip \
+            python3 \
+            gcc-11 \
+            g++-11
+
+      # ==========================================
+      # 3. TOOLCHAIN
+      # ==========================================
+      - name: Setup Toolchain
+        run: |
+          set -e
+
+          mkdir -p "$GITHUB_WORKSPACE/toolchain"
+
+          git clone --depth=1 \
+            https://github.com/kdrag0n/proton-clang.git \
+            "$GITHUB_WORKSPACE/toolchain/proton-clang"
+
+          echo "Toolchain ready."
+
+      # ==========================================
+      # 4. ENVIRONMENT
+      # ==========================================
+      - name: Setup Build Environment
+        run: |
+          echo "ARCH=arm64" >> "$GITHUB_ENV"
+          echo "SUBARCH=arm64" >> "$GITHUB_ENV"
+
+          echo "PATH=$GITHUB_WORKSPACE/toolchain/proton-clang/bin:$PATH" \
+            >> "$GITHUB_ENV"
+
+      # ==========================================
+      # 5. CHECK DEFCONFIG
+      # ==========================================
+      - name: Check Surya Defconfig
+        working-directory: kernel
+        run: |
+          set -e
+
+          echo "========================================"
+          echo "SURYA DEFCONFIG"
+          echo "========================================"
+
+          find arch/arm64/configs \
+            -maxdepth 1 \
+            -type f \
+            | grep -Ei 'surya|sm7150|xiaomi' \
+            || true
+
+      # ==========================================
+      # 6. CONFIGURE
+      # ==========================================
+      - name: Configure Kernel
+        working-directory: kernel
+        shell: bash
+        run: |
+          set -e
+
+          export ARCH=arm64
+          export SUBARCH=arm64
+
+          mkdir -p "$GITHUB_WORKSPACE/out"
+
+          make O="$GITHUB_WORKSPACE/out" \
+            ARCH=arm64 \
+            surya_defconfig
+
+          test -f "$GITHUB_WORKSPACE/out/.config"
+
+          echo ""
+          echo "Kernel configuration generated."
+
+      # ==========================================
+      # 7. BUILD KERNEL
+      # ==========================================
+      - name: Build Kernel
+        working-directory: kernel
+        shell: bash
+        run: |
+          set -e
+
+          export ARCH=arm64
+          export SUBARCH=arm64
+
+          export CC=clang
+          export LLVM=1
+          export LLVM_IAS=1
+
+          export HOSTCC=/usr/bin/gcc-11
+          export HOSTCXX=/usr/bin/g++-11
+
+          echo "========================================"
+          echo "       BUILDING CLEAN SURYA KERNEL"
+          echo "========================================"
+
+          echo "CPU:"
+          nproc
+
+          time make -j"$(nproc)" \
+            O="$GITHUB_WORKSPACE/out" \
+            ARCH=arm64 \
+            CC=clang \
+            LLVM=1 \
+            LLVM_IAS=1 \
+            HOSTCC="$HOSTCC" \
+            HOSTCXX="$HOSTCXX" \
+            Image.gz-dtb
+
+      # ==========================================
+      # 8. VERIFY KERNEL
+      # ==========================================
+      - name: Verify Kernel
+        run: |
+          set -e
+
+          KERNEL="$GITHUB_WORKSPACE/out/arch/arm64/boot/Image.gz-dtb"
+
+          echo "========================================"
+          echo "       KERNEL BUILD RESULT"
+          echo "========================================"
+
+          test -f "$KERNEL"
+
+          ls -lh "$KERNEL"
+
+          file "$KERNEL"
+
+          echo ""
+          echo "Kernel build successful."
+
+      # ==========================================
+      # 9. CHECKOUT ANYKERNEL3
+      # ==========================================
+      - name: Checkout AnyKernel3
+        uses: actions/checkout@v4
+        with:
+          repository: osm0sis/AnyKernel3
+          path: AnyKernel3
+          fetch-depth: 1
+
+      # ==========================================
+      # 10. PREPARE ANYKERNEL3
+      # ==========================================
+      - name: Prepare Flashable ZIP
+        run: |
+          set -e
+
+          KERNEL="$GITHUB_WORKSPACE/out/arch/arm64/boot/Image.gz-dtb"
+
+          cp "$KERNEL" \
+            "$GITHUB_WORKSPACE/AnyKernel3/Image.gz-dtb"
+
+          echo "Kernel copied to AnyKernel3."
+
+          ls -lh \
+            "$GITHUB_WORKSPACE/AnyKernel3/Image.gz-dtb"
+
+      # ==========================================
+      # 11. BUILD FLASHABLE ZIP
+      # ==========================================
+      - name: Package Flashable ZIP
+        run: |
+          set -e
+
+          cd "$GITHUB_WORKSPACE/AnyKernel3"
+
+          rm -f \
+            ../SPECTRA-Surya-A13-Clean.zip
+
+          zip -r9 \
+            ../SPECTRA-Surya-A13-Clean.zip \
+            . \
+            -x ".git/*" \
+            -x ".github/*" \
+            -x "*.md"
+
+      # ==========================================
+      # 12. VERIFY ZIP
+      # ==========================================
+      - name: Verify Flashable ZIP
+        run: |
+          set -e
+
+          ZIP="$GITHUB_WORKSPACE/SPECTRA-Surya-A13-Clean.zip"
+
+          echo "========================================"
+          echo "       FLASHABLE ZIP"
+          echo "========================================"
+
+          test -f "$ZIP"
+
+          ls -lh "$ZIP"
+
+          echo ""
+          echo "ZIP CONTENT:"
+          unzip -l "$ZIP" | head -50
+
+      # ==========================================
+      # 13. UPLOAD ARTIFACT
+      # ==========================================
+      - name: Upload Flashable ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: SPECTRA-Surya-A13-Clean
+          path: |
+            SPECTRA-Surya-A13-Clean.zip
