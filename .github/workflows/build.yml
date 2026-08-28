@@ -2,6 +2,15 @@ name: Build StormBreaker X13
 
 on:
   workflow_dispatch:
+    inputs:
+      ROOT_MANAGER:
+        description: "Root Manager"
+        required: true
+        default: "off"
+        type: choice
+        options:
+          - off
+          - ksun
 
 jobs:
   build:
@@ -84,6 +93,25 @@ jobs:
           ls -lh arch/arm64/configs/surya_defconfig
 
       # ==========================================
+      # INSTALL KERNELSU NEXT
+      # ==========================================
+      - name: Install KernelSU Next
+        if: ${{ inputs.ROOT_MANAGER == 'ksun' }}
+        working-directory: kernel
+        run: |
+          set -e
+
+          echo "=========================================="
+          echo "       INSTALLING KERNELSU NEXT"
+          echo "=========================================="
+
+          curl -LSs \
+            "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh" \
+            | bash -
+
+          echo "KernelSU Next installed successfully."
+
+      # ==========================================
       # 6. CONFIGURE KERNEL
       # ==========================================
       - name: Configure kernel
@@ -113,25 +141,39 @@ jobs:
       # ==========================================
       # 7. BUILD KERNEL
       # ==========================================
-      - name: Build kernel
+      - name: Build Kernel
         working-directory: kernel
         run: |
-          set -e
+          set -o pipefail
 
-          echo "========================================"
-          echo "             BUILD KERNEL"
-          echo "========================================"
-
-          BUILD_DIR="$GITHUB_WORKSPACE/out"
+          rm -f build.log
 
           make -j"$(nproc)" \
-            O="$BUILD_DIR" \
+            O=out \
             ARCH=arm64 \
             CROSS_COMPILE="$CROSS_COMPILE" \
-            CROSS_COMPILE_ARM32="$CROSS_COMPILE_ARM32" \
-            CC=clang \
-            LLVM=1 \
-            LLVM_IAS=1
+            V=1 \
+            2>&1 | tee build.log
+
+          status=${PIPESTATUS[0]}
+
+          echo ""
+          echo "========================================"
+          echo "        REAL BUILD ERRORS"
+          echo "========================================"
+
+          grep -nEi \
+            "error:|fatal error:|undefined reference|No such file|recipe for target" \
+            build.log | tail -50 || true
+
+          echo ""
+          echo "========================================"
+          echo "        LAST 100 BUILD LINES"
+          echo "========================================"
+
+          tail -100 build.log
+
+          exit "$status"
 
       # ==========================================
       # 8. FIND KERNEL IMAGE
