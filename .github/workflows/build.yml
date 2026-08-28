@@ -177,18 +177,19 @@ jobs:
           echo "KernelSU Next configuration step completed."
 
 
-      # ==========================================
-      # 7. BUILD KERNEL
-      # ==========================================
       - name: Build Kernel
         working-directory: kernel
         run: |
           set -o pipefail
 
-          rm -f build.log
+          BUILD_DIR="out"
+
+          echo "=========================================="
+          echo "             BUILD KERNEL"
+          echo "=========================================="
 
           make -j"$(nproc)" \
-            O=out \
+            O="$BUILD_DIR" \
             ARCH=arm64 \
             CROSS_COMPILE="$CROSS_COMPILE" \
             V=1 \
@@ -197,23 +198,22 @@ jobs:
           status=${PIPESTATUS[0]}
 
           echo ""
-          echo "========================================"
-          echo "        REAL BUILD ERRORS"
-          echo "========================================"
+          echo "=========================================="
+          echo "           REAL BUILD ERROR"
+          echo "=========================================="
 
           grep -nEi \
-            "error:|fatal error:|undefined reference|No such file|recipe for target" \
-            build.log | tail -50 || true
+            "error:|fatal error:|undefined reference|No such file|recipe for target|Error [0-9]+" \
+            build.log | tail -100 || true
 
           echo ""
-          echo "========================================"
-          echo "        LAST 100 BUILD LINES"
-          echo "========================================"
+          echo "=========================================="
+          echo "          LAST 150 LINES"
+          echo "=========================================="
 
-          tail -100 build.log
+          tail -150 build.log
 
           exit "$status"
-
       # ==========================================
       # 8. FIND KERNEL IMAGE
       # ==========================================
