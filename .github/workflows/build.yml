@@ -1,4 +1,6 @@
-name: SPECTRA Surya A13 - Clean Kernel
+# Build StormBreaker X13 - POCO X3 NFC (Surya)
+
+name: Build StormBreaker X13
 
 on:
   workflow_dispatch:
@@ -10,166 +12,157 @@ jobs:
     steps:
 
       # ==========================================
-      # 1. CHECKOUT KERNEL
+      # 1. CHECKOUT STORMBREAKER X13
       # ==========================================
-      - name: Checkout Kernel
+      - name: Checkout StormBreaker X13
         uses: actions/checkout@v4
         with:
-          repository: r0ttenbeef/android_kernel_xiaomi_surya
-          ref: lineage-20
+          repository: stormbreaker-project/kernel_xiaomi_surya
+          ref: X13
           path: kernel
           fetch-depth: 1
 
       # ==========================================
-      # 2. DEPENDENCIES
+      # 2. INSTALL DEPENDENCIES
       # ==========================================
-      - name: Install Dependencies
+      - name: Install dependencies
         run: |
           sudo apt-get update
 
           sudo apt-get install -y \
             bc \
             bison \
-            flex \
             build-essential \
-            libssl-dev \
+            ccache \
+            flex \
+            gcc \
+            git \
             libelf-dev \
             libncurses5-dev \
-            libncurses-dev \
-            cpio \
-            git \
-            curl \
-            wget \
-            zip \
-            unzip \
+            libssl-dev \
             python3 \
-            gcc-11 \
-            g++-11
+            unzip \
+            zip
 
       # ==========================================
-      # 3. TOOLCHAIN
+      # 3. SETUP TOOLCHAIN
       # ==========================================
-      - name: Setup Toolchain
+      - name: Setup Clang toolchain
         run: |
-          set -e
-
-          mkdir -p "$GITHUB_WORKSPACE/toolchain"
-
           git clone --depth=1 \
             https://github.com/kdrag0n/proton-clang.git \
-            "$GITHUB_WORKSPACE/toolchain/proton-clang"
+            clang
 
-          echo "Toolchain ready."
+          echo "$GITHUB_WORKSPACE/clang/bin" >> "$GITHUB_PATH"
 
       # ==========================================
-      # 4. ENVIRONMENT
+      # 4. BUILD ENVIRONMENT
       # ==========================================
-      - name: Setup Build Environment
+      - name: Setup build environment
         run: |
           echo "ARCH=arm64" >> "$GITHUB_ENV"
           echo "SUBARCH=arm64" >> "$GITHUB_ENV"
 
-          echo "PATH=$GITHUB_WORKSPACE/toolchain/proton-clang/bin:$PATH" \
-            >> "$GITHUB_ENV"
+          echo "CROSS_COMPILE=aarch64-linux-gnu-" >> "$GITHUB_ENV"
+          echo "CROSS_COMPILE_ARM32=arm-linux-gnueabi-" >> "$GITHUB_ENV"
 
       # ==========================================
-      # 5. CHECK DEFCONFIG
+      # 5. CHECK SURYA DEFCONFIG
       # ==========================================
-      - name: Check Surya Defconfig
+      - name: Check Surya defconfig
         working-directory: kernel
         run: |
           set -e
 
           echo "========================================"
-          echo "SURYA DEFCONFIG"
+          echo "       SURYA DEFCONFIG CHECK"
           echo "========================================"
 
-          find arch/arm64/configs \
-            -maxdepth 1 \
-            -type f \
-            | grep -Ei 'surya|sm7150|xiaomi' \
-            || true
+          test -f arch/arm64/configs/surya_defconfig
+
+          echo "Defconfig found:"
+          ls -lh arch/arm64/configs/surya_defconfig
 
       # ==========================================
-      # 6. CONFIGURE
+      # 6. CONFIGURE KERNEL
       # ==========================================
-      - name: Configure Kernel
+      - name: Configure kernel
         working-directory: kernel
-        shell: bash
         run: |
           set -e
 
-          export ARCH=arm64
-          export SUBARCH=arm64
+          echo "========================================"
+          echo "       CONFIGURE KERNEL"
+          echo "========================================"
 
-          mkdir -p "$GITHUB_WORKSPACE/out"
+          BUILD_DIR="$GITHUB_WORKSPACE/out"
 
-          make O="$GITHUB_WORKSPACE/out" \
+          rm -rf "$BUILD_DIR"
+          mkdir -p "$BUILD_DIR"
+
+          make O="$BUILD_DIR" \
             ARCH=arm64 \
+            CROSS_COMPILE="$CROSS_COMPILE" \
+            CROSS_COMPILE_ARM32="$CROSS_COMPILE_ARM32" \
             surya_defconfig
 
-          test -f "$GITHUB_WORKSPACE/out/.config"
+          test -f "$BUILD_DIR/.config"
 
-          echo ""
-          echo "Kernel configuration generated."
+          echo "Kernel configuration generated successfully."
 
       # ==========================================
       # 7. BUILD KERNEL
       # ==========================================
-      - name: Build Kernel
+      - name: Build kernel
         working-directory: kernel
-        shell: bash
         run: |
           set -e
 
-          export ARCH=arm64
-          export SUBARCH=arm64
-
-          export CC=clang
-          export LLVM=1
-          export LLVM_IAS=1
-
-          export HOSTCC=/usr/bin/gcc-11
-          export HOSTCXX=/usr/bin/g++-11
-
           echo "========================================"
-          echo "       BUILDING CLEAN SURYA KERNEL"
+          echo "          BUILD KERNEL"
           echo "========================================"
 
-          echo "CPU:"
-          nproc
+          BUILD_DIR="$GITHUB_WORKSPACE/out"
 
-          time make -j"$(nproc)" \
-            O="$GITHUB_WORKSPACE/out" \
+          make -j"$(nproc)" \
+            O="$BUILD_DIR" \
             ARCH=arm64 \
+            CROSS_COMPILE="$CROSS_COMPILE" \
+            CROSS_COMPILE_ARM32="$CROSS_COMPILE_ARM32" \
             CC=clang \
             LLVM=1 \
-            LLVM_IAS=1 \
-            HOSTCC="$HOSTCC" \
-            HOSTCXX="$HOSTCXX" \
-            Image.gz-dtb
+            LLVM_IAS=1
 
       # ==========================================
       # 8. VERIFY KERNEL
       # ==========================================
-      - name: Verify Kernel
+      - name: Verify kernel
         run: |
           set -e
 
+          echo "========================================"
+          echo "          VERIFY KERNEL"
+          echo "========================================"
+
           KERNEL="$GITHUB_WORKSPACE/out/arch/arm64/boot/Image.gz-dtb"
 
-          echo "========================================"
-          echo "       KERNEL BUILD RESULT"
-          echo "========================================"
+          if [ ! -f "$KERNEL" ]; then
+            echo "ERROR: Image.gz-dtb not found."
 
-          test -f "$KERNEL"
+            echo ""
+            echo "Available kernel images:"
 
+            find \
+              "$GITHUB_WORKSPACE/out/arch/arm64/boot" \
+              -maxdepth 1 \
+              -type f \
+              -printf '%f\n' || true
+
+            exit 1
+          fi
+
+          echo "Kernel found:"
           ls -lh "$KERNEL"
-
-          file "$KERNEL"
-
-          echo ""
-          echo "Kernel build successful."
 
       # ==========================================
       # 9. CHECKOUT ANYKERNEL3
@@ -178,72 +171,284 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: osm0sis/AnyKernel3
-          path: AnyKernel3
+          path: anykernel
           fetch-depth: 1
 
       # ==========================================
       # 10. PREPARE ANYKERNEL3
       # ==========================================
-      - name: Prepare Flashable ZIP
+      - name: Prepare AnyKernel3
         run: |
           set -e
 
-          KERNEL="$GITHUB_WORKSPACE/out/arch/arm64/boot/Image.gz-dtb"
+          echo "========================================"
+          echo "        PREPARE ANYKERNEL3"
+          echo "========================================"
 
-          cp "$KERNEL" \
-            "$GITHUB_WORKSPACE/AnyKernel3/Image.gz-dtb"
+          cp \
+            "$GITHUB_WORKSPACE/out/arch/arm64/boot/Image.gz-dtb" \
+            "$GITHUB_WORKSPACE/anykernel/"
 
-          echo "Kernel copied to AnyKernel3."
+          cd "$GITHUB_WORKSPACE/anykernel"
 
-          ls -lh \
-            "$GITHUB_WORKSPACE/AnyKernel3/Image.gz-dtb"
+          cat > anykernel.sh <<'EOF'
+          # AnyKernel3 - POCO X3 NFC / Surya
+
+          properties() {
+            kernel.string=StormBreaker X13 - Surya
+            do.devicecheck=0
+            do.modules=0
+            do.systemless=0
+            do.cleanup=1
+            do.cleanuponabort=0
+          }
+
+          block=/dev/block/bootdevice/by-name/boot
+          is_slot_device=auto
+          ramdisk_compression=auto
+          patch_vbmeta_flag=auto
+
+          . tools/ak3-core.sh
+
+          dump_boot
+          write_boot
+          EOF
+
+          chmod +x anykernel.sh
+
+          rm -f README.md
 
       # ==========================================
-      # 11. BUILD FLASHABLE ZIP
+      # 11. PACKAGE FLASHABLE ZIP
       # ==========================================
-      - name: Package Flashable ZIP
+      - name: Package flashable ZIP
         run: |
           set -e
 
-          cd "$GITHUB_WORKSPACE/AnyKernel3"
+          echo "========================================"
+          echo "       PACKAGE FLASHABLE ZIP"
+          echo "========================================"
 
-          rm -f \
-            ../SPECTRA-Surya-A13-Clean.zip
+          cd "$GITHUB_WORKSPACE/anykernel"
+
+          ZIP_NAME="StormBreaker-X13-Surya-AOSP13.zip"
 
           zip -r9 \
-            ../SPECTRA-Surya-A13-Clean.zip \
+            "$GITHUB_WORKSPACE/$ZIP_NAME" \
             . \
             -x ".git/*" \
-            -x ".github/*" \
-            -x "*.md"
+            -x "README.md" \
+            -x "*placeholder"
+
+          echo ""
+          echo "Flashable ZIP created:"
+          ls -lh "$GITHUB_WORKSPACE/$ZIP_NAME"
 
       # ==========================================
-      # 12. VERIFY ZIP
+      # 12. VERIFY FLASHABLE ZIP
       # ==========================================
-      - name: Verify Flashable ZIP
+      - name: Verify flashable ZIP
         run: |
           set -e
 
-          ZIP="$GITHUB_WORKSPACE/SPECTRA-Surya-A13-Clean.zip"
+          echo "========================================"
+          echo "        VERIFY FLASHABLE ZIP"
+          echo "========================================"
 
-          echo "========================================"
-          echo "       FLASHABLE ZIP"
-          echo "========================================"
+          ZIP="$GITHUB_WORKSPACE/StormBreaker-X13-Surya-AOSP13.zip"
 
           test -f "$ZIP"
 
-          ls -lh "$ZIP"
+          unzip -t "$ZIP"
 
           echo ""
-          echo "ZIP CONTENT:"
-          unzip -l "$ZIP" | head -50
+          echo "========================================"
+          echo "       FLASHABLE ZIP READY"
+          echo "========================================"
+
+          ls -lh "$ZIP"
 
       # ==========================================
-      # 13. UPLOAD ARTIFACT
+      # 13. UPLOAD FLASHABLE ZIP
       # ==========================================
-      - name: Upload Flashable ZIP
+      - name: Upload flashable ZIP
         uses: actions/upload-artifact@v4
         with:
-          name: SPECTRA-Surya-A13-Clean
-          path: |
-            SPECTRA-Surya-A13-Clean.zip
+          name: StormBreaker-X13-Surya-AOSP13
+          path: StormBreaker-X13-Surya-AOSP13.zip
+          if-no-files-found: error￼Enter# Build StormBreaker X13 - POCO X3 NFC (Surya)
+
+name: Build StormBreaker X13
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+
+    steps:
+
+      # ==========================================
+      # 1. CHECKOUT STORMBREAKER X13
+      # ==========================================
+      - name: Checkout StormBreaker X13
+        uses: actions/checkout@v4
+        with:
+          repository: stormbreaker-project/kernel_xiaomi_surya
+          ref: X13
+          path: kernel
+          fetch-depth: 1
+
+      # ==========================================
+      # 2. INSTALL DEPENDENCIES
+      # ==========================================
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+
+          sudo apt-get install -y \
+            bc \
+            bison \
+            build-essential \
+            ccache \
+            flex \
+            gcc \
+            git \
+            libelf-dev \
+            libncurses5-dev \
+            libssl-dev \
+            python3 \
+            unzip \
+            zip
+
+      # ==========================================
+      # 3. SETUP TOOLCHAIN
+      # ==========================================
+      - name: Setup Clang toolchain
+        run: |
+          git clone --depth=1 \
+            https://github.com/kdrag0n/proton-clang.git \
+            clang
+
+          echo "$GITHUB_WORKSPACE/clang/bin" >> "$GITHUB_PATH"
+
+      # ==========================================
+      # 4. BUILD ENVIRONMENT
+      # ==========================================
+      - name: Setup build environment
+        run: |
+          echo "ARCH=arm64" >> "$GITHUB_ENV"
+          echo "SUBARCH=arm64" >> "$GITHUB_ENV"
+
+          echo "CROSS_COMPILE=aarch64-linux-gnu-" >> "$GITHUB_ENV"
+          echo "CROSS_COMPILE_ARM32=arm-linux-gnueabi-" >> "$GITHUB_ENV"
+
+      # ==========================================
+      # 5. CHECK SURYA DEFCONFIG
+      # ==========================================
+      - name: Check Surya defconfig
+        working-directory: kernel
+        run: |
+    set -e
+
+          echo "========================================"
+          echo "       SURYA DEFCONFIG CHECK"
+          echo "========================================"
+
+          test -f arch/arm64/configs/surya_defconfig
+
+          echo "Defconfig found:"
+          ls -lh arch/arm64/configs/surya_defconfig
+
+      # ==========================================
+      # 6. CONFIGURE KERNEL
+      # ==========================================
+      - name: Configure kernel
+        working-directory: kernel
+        run: |
+          set -e
+
+          echo "========================================"
+          echo "       CONFIGURE KERNEL"
+          echo "========================================"
+
+          BUILD_DIR="$GITHUB_WORKSPACE/out"
+
+          rm -rf "$BUILD_DIR"
+          mkdir -p "$BUILD_DIR"
+
+          make O="$BUILD_DIR" \
+            ARCH=arm64 \
+            CROSS_COMPILE="$CROSS_COMPILE" \
+            CROSS_COMPILE_ARM32="$CROSS_COMPILE_ARM32" \
+            surya_defconfig
+
+          test -f "$BUILD_DIR/.config"
+
+          echo "Kernel configuration generated successfully."
+
+      # ==========================================
+      # 7. BUILD KERNEL
+      # ==========================================
+      - name: Build kernel
+        working-directory: kernel
+        run: |
+          set -e
+
+          echo "========================================"
+          echo "          BUILD KERNEL"
+          echo "========================================"
+
+          BUILD_DIR="$GITHUB_WORKSPACE/out"
+
+          make -j"$(nproc)" \
+            O="$BUILD_DIR" \
+            ARCH=arm64 \
+            CROSS_COMPILE="$CROSS_COMPILE" \
+            CROSS_COMPILE_ARM32="$CROSS_COMPILE_ARM32" \
+            CC=clang \
+            LLVM=1 \
+            LLVM_IAS=1
+
+      # ==========================================
+      # 8. VERIFY KERNEL
+      # ==========================================
+      - name: Verify kernel
+        run: |
+          set -e
+
+          echo "========================================"
+          echo "          VERIFY KERNEL"
+          echo "========================================"
+
+          KERNEL="$GITHUB_WORKSPACE/out/arch/arm64/boot/Image.gz-dtb"
+
+          if [ ! -f "$KERNEL" ]; then
+            echo "ERROR: Image.gz-dtb not found."
+
+            echo ""
+            echo "Available kernel images:"
+
+            find \
+              "$GITHUB_WORKSPACE/out/arch/arm64/boot" \
+              -maxdepth 1 \
+              -type f \
+              -printf '%f\n' || true
+
+            exit 1
+          fi
+
+          echo "Kernel found:"
+          ls -lh "$KERNEL"
+
+      # ==========================================
+      # 9. CHECKOUT ANYKERNEL3
+      # ==========================================
+      - name: Checkout AnyKernel3
+        uses: actions/checkout@v4
+        with:
+          repository: osm0sis/AnyKernel3
+          path: anykernel
+          fetch-depth: 1
+
