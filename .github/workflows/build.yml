@@ -138,15 +138,36 @@ jobs:
 
           echo "Kernel configuration generated successfully."
 
+      # ==========================================
+      # CONFIGURE KERNELSU NEXT
+      # ==========================================
       - name: Configure KernelSU Next
-        if: ${{ inputs.ROOT_MANAGER == 'Ksun' }}
+        if: ${{ inputs.ROOT_MANAGER == 'ksun' }}
         working-directory: kernel
         run: |
+          set -e
+
+          BUILD_DIR="out"
+
+          echo "=== Configuring KernelSU Next ==="
+          echo "BUILD_DIR=$BUILD_DIR"
+
+          test -f "$BUILD_DIR/.config"
+
           scripts/config --file "$BUILD_DIR/.config" \
             --enable CONFIG_KSU
 
-          scripts/config --file "$BUILD_DIR/.config" \
-            --enable CONFIG_KSU_TAMPER_SYSCALL_TABLE
+          if grep -q "config KSU_TAMPER_SYSCALL_TABLE" drivers/kernelsu/Kconfig 2>/dev/null; then
+            scripts/config --file "$BUILD_DIR/.config" \
+              --enable CONFIG_KSU_TAMPER_SYSCALL_TABLE
+          fi
+
+          make O="$BUILD_DIR" ARCH=arm64 olddefconfig
+
+          echo ""
+          echo "=== VERIFY KSUN ==="
+          grep '^CONFIG_KSU=' "$BUILD_DIR/.config" || true
+          grep '^CONFIG_KSU_TAMPER_SYSCALL_TABLE=' "$BUILD_DIR/.config" || true
 
       # ==========================================
       # 7. BUILD KERNEL
