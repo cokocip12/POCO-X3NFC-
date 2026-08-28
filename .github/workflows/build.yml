@@ -193,26 +193,33 @@ jobs:
         working-directory: kernel
         shell: bash
         run: |
-         set -o pipefail
+          set -o pipefail
 
-         echo "=========================================="
-         echo "           BUILD KERNEL"
-         echo "=========================================="
+          echo "=========================================="
+          echo "             BUILD KERNEL"
+          echo "=========================================="
 
-         make -C "$BUILD_DIR" \
-         O="$BUILD_DIR" \
-         ARCH=arm64 \
-         CROSS_COMPILE="$CROSS_COMPILE" \
-         -j"$(nproc)" 2>&1 | tee "$GITHUB_WORKSPACE/build.log"
+          make -C "$BUILD_DIR" \
+            ARCH=arm64 \
+            O="$BUILD_DIR" \
+            CROSS_COMPILE="$CROSS_COMPILE" \
+            -j1 V=1 2>&1 | tee "$GITHUB_WORKSPACE/build.log"
 
-         echo ""
-         echo "=========================================="
-         echo "        BUILD ERROR SUMMARY"
-         echo "=========================================="
-  
-         grep -nEi \
-         'error:|fatal error:|undefined reference|No such file|No rule to make|Error [0-9]+|sub-makel' \
-         "$GITHUB_WORKSPACE/build.log" | tail -100 || true
+          BUILD_STATUS=${PIPESTATUS[0]}
+
+          echo ""
+          echo "=========================================="
+          echo "          BUILD ERROR SUMMARY"
+          echo "=========================================="
+
+          grep -nEi \
+            'error:|fatal error:|undefined reference|No such file|No rule to make|Error [0-9]+|sub-makel' \
+            "$GITHUB_WORKSPACE/build.log" | tail -100 || true
+
+          echo ""
+          echo "Build exit code: $BUILD_STATUS"
+
+          exit "$BUILD_STATUS"
           
       # ==========================================
       # 8. FIND KERNEL IMAGE
