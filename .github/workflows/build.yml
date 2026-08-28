@@ -350,7 +350,7 @@ jobs:
       - name: Check Surya defconfig
         working-directory: kernel
         run: |
-    set -e
+         set -e
 
           echo "========================================"
           echo "       SURYA DEFCONFIG CHECK"
