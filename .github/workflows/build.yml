@@ -111,32 +111,27 @@ jobs:
 
           echo "KernelSU Next installed successfully."
 
-      # ==========================================
-      # 6. CONFIGURE KERNEL
-      # ==========================================
       - name: Configure kernel
         working-directory: kernel
         run: |
           set -e
 
-          echo "========================================"
+          BUILD_DIR="out"
+
+          echo "=========================================="
           echo "          CONFIGURE KERNEL"
-          echo "========================================"
+          echo "=========================================="
 
-          BUILD_DIR="$GITHUB_WORKSPACE/out"
+          rm -f .config
 
-          rm -rf "$BUILD_DIR"
-          mkdir -p "$BUILD_DIR"
+          make O="$BUILD_DIR" ARCH=arm64 surya_defconfig
 
-          make O="$BUILD_DIR" \
-            ARCH=arm64 \
-            CROSS_COMPILE="$CROSS_COMPILE" \
-            CROSS_COMPILE_ARM32="$CROSS_COMPILE_ARM32" \
-            surya_defconfig
-
+          echo ""
+          echo "=== CHECK CONFIG ==="
           test -f "$BUILD_DIR/.config"
 
           echo "Kernel configuration generated successfully."
+          ls -lh "$BUILD_DIR/.config"
 
       # ==========================================
       # CONFIGURE KERNELSU NEXT
@@ -149,15 +144,16 @@ jobs:
 
           BUILD_DIR="out"
 
-          echo "=== Configuring KernelSU Next ==="
-          echo "BUILD_DIR=$BUILD_DIR"
+          echo "=========================================="
+          echo "       CONFIGURING KERNELSU NEXT"
+          echo "=========================================="
 
           test -f "$BUILD_DIR/.config"
 
           scripts/config --file "$BUILD_DIR/.config" \
             --enable CONFIG_KSU
 
-          if grep -q "config KSU_TAMPER_SYSCALL_TABLE" drivers/kernelsu/Kconfig 2>/dev/null; then
+          if grep -q "KSU_TAMPER_SYSCALL_TABLE" drivers/kernelsu/Kconfig; then
             scripts/config --file "$BUILD_DIR/.config" \
               --enable CONFIG_KSU_TAMPER_SYSCALL_TABLE
           fi
@@ -165,8 +161,8 @@ jobs:
           make O="$BUILD_DIR" ARCH=arm64 olddefconfig
 
           echo ""
-          echo "=== VERIFY KSUN ==="
-          grep '^CONFIG_KSU=' "$BUILD_DIR/.config" || true
+          echo "=== KSUN CONFIG ==="
+          grep '^CONFIG_KSU=' "$BUILD_DIR/.config"
           grep '^CONFIG_KSU_TAMPER_SYSCALL_TABLE=' "$BUILD_DIR/.config" || true
 
       # ==========================================
