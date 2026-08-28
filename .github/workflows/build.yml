@@ -111,6 +111,16 @@ jobs:
 
           echo "KernelSU Next installed successfully."
 
+      - name: Setup build environment
+        working-directory: kernel
+        run: |
+          export BUILD_DIR="$GITHUB_WORKSPACE/kernel/out"
+
+          mkdir -p "$BUILD_DIR"
+
+          echo "BUILD_DIR=$BUILD_DIR" >> "$GITHUB_ENV"
+          echo "ARCH=arm64" >> "$GITHUB_ENV"
+
       - name: Configure kernel
         working-directory: kernel
         run: |
@@ -176,32 +186,24 @@ jobs:
           echo ""
           echo "KernelSU Next configuration step completed."
 
-
       - name: Build Kernel
         working-directory: kernel
         run: |
           set -e
 
           echo "========================================"
-          echo "          BUILD KERNEL"
+          echo "             BUILD KERNEL"
           echo "========================================"
 
-          make -C "$GITHUB_WORKSPACE/kernel" \
+          test -f "$BUILD_DIR/.config" || {
+            echo "ERROR: $BUILD_DIR/.config tidak ditemukan!"
+            exit 1
+          }
+
+          make -j"$(nproc)" \
             O="$BUILD_DIR" \
             ARCH=arm64 \
-            CROSS_COMPILE="$CROSS_COMPILE" \
-            2>&1 > build.log || {
-              echo ""
-              echo "========================================"
-              echo "       BUILD FAILED - LAST 200 LINES"
-              echo "========================================"
-              tail -200 build.log
-              exit 1
-            }
-
-          echo "========================================"
-          echo "       KERNEL BUILD SUCCESS"
-          echo "========================================"
+            "$@"
           
       # ==========================================
       # 8. FIND KERNEL IMAGE
