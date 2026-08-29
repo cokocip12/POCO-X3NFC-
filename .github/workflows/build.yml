@@ -185,9 +185,10 @@ jobs:
 
           echo ""
           echo "KernelSU Next configuration step completed."
-
+          
+            
       # ==========================================
-      # BUILD KERNEL
+      # 7. BUILD KERNEL
       # ==========================================
       - name: Build Kernel
         working-directory: kernel
@@ -197,56 +198,48 @@ jobs:
           export ARCH=arm64
           export SUBARCH=arm64
 
+          BUILD_DIR="$GITHUB_WORKSPACE/kernel/out"
+
           echo "=========================================="
-          echo "        BUILD KERNEL"
+          echo "              BUILD KERNEL"
           echo "=========================================="
 
-          # Pastikan output directory
-          mkdir -p "$BUILD_DIR"
+          echo "Build directory:"
+          echo "$BUILD_DIR"
 
           # ==========================================
-          # LOAD DEFCONFIG
+          # CHECK EXISTING CONFIG
           # ==========================================
-          echo "Loading Surya defconfig..."
+          echo ""
+          echo "Checking existing kernel configuration..."
 
-          DEFCONFIG=$(find arch/arm64/configs -type f \
-            \( -iname '*surya*defconfig' -o -iname '*karna*defconfig' \) \
-            | head -n 1)
-
-          if [ -z "$DEFCONFIG" ]; then
-            echo "❌ Surya/Karna defconfig tidak ditemukan!"
-            echo ""
-            echo "Defconfig yang tersedia:"
-            find arch/arm64/configs -maxdepth 1 -type f -name '*defconfig' | sort | head -100
+          if [ ! -f "$BUILD_DIR/.config" ]; then
+            echo "❌ .config tidak ditemukan!"
+            echo "Configure kernel step sebelumnya gagal."
             exit 1
           fi
 
-          DEFCONFIG=$(basename "$DEFCONFIG")
-
-          echo "✅ Using defconfig: $DEFCONFIG"
-
-          make O="$BUILD_DIR" "$DEFCONFIG"
-
-          echo ""
-          echo "=========================================="
-          echo "CONFIG CHECK"
-          echo "=========================================="
-
-          test -f "$BUILD_DIR/.config"
+          echo "✅ .config ditemukan:"
           ls -lh "$BUILD_DIR/.config"
+
+          # JANGAN menjalankan defconfig lagi di sini.
+          # Configure kernel sebelumnya sudah menjalankan:
+          # make O=out ARCH=arm64 surya_defconfig
 
           # ==========================================
           # BUILD
           # ==========================================
           echo ""
           echo "=========================================="
-          echo "STARTING KERNEL COMPILATION"
+          echo "       STARTING KERNEL COMPILATION"
           echo "=========================================="
 
           set +e
 
-          make -j"$(nproc)" O="$BUILD_DIR" 2>&1 \
-            | tee "$BUILD_DIR/build.log" >/dev/null
+          make -j"$(nproc)" \
+            O="$BUILD_DIR" \
+            ARCH=arm64 \
+            2>&1 | tee "$BUILD_DIR/build.log" >/dev/null
 
           BUILD_STATUS=${PIPESTATUS[0]}
 
@@ -256,9 +249,10 @@ jobs:
           # ERROR REPORT
           # ==========================================
           if [ "$BUILD_STATUS" -ne 0 ]; then
+
             echo ""
             echo "=========================================="
-            echo "❌ KERNEL BUILD FAILED"
+            echo "        ❌ KERNEL BUILD FAILED"
             echo "=========================================="
 
             echo ""
@@ -270,36 +264,60 @@ jobs:
               | tail -100 || true
 
             echo ""
-            echo "===== LAST 80 LINES ====="
-            tail -80 "$BUILD_DIR/build.log"
+            echo "===== LAST 100 LOG LINES ====="
+
+            tail -100 "$BUILD_DIR/build.log"
+
+            echo ""
+            echo "Build log:"
+            echo "$BUILD_DIR/build.log"
 
             exit "$BUILD_STATUS"
           fi
 
-          echo ""
-          echo "=========================================="
-          echo "✅ KERNEL BUILD SUCCESS"
-          echo "=========================================="
+      # ==========================================
+      # 8. VERIFY KERNEL
+      # ==========================================
+      - name: Verify kernel
+        run: |
+          set -e
 
-          # ==========================================
-          # VERIFY IMAGE
-          # ==========================================
-          if [ -f "$BUILD_DIR/arch/arm64/boot/Image.gz-dtb" ]; then
-            echo "✅ Image.gz-dtb found"
-            ls -lh "$BUILD_DIR/arch/arm64/boot/Image.gz-dtb"
+          echo "========================================"
+          echo "          VERIFY KERNEL"
+          echo "========================================"
 
-          elif [ -f "$BUILD_DIR/arch/arm64/boot/Image.gz" ]; then
-            echo "✅ Image.gz found"
-            ls -lh "$BUILD_DIR/arch/arm64/boot/Image.gz"
+          BOOT_DIR="$GITHUB_WORKSPACE/kernel/out/arch/arm64/boot"
 
-          elif [ -f "$BUILD_DIR/arch/arm64/boot/Image" ]; then
-            echo "✅ Image found"
-            ls -lh "$BUILD_DIR/arch/arm64/boot/Image"
+          echo "Boot directory:"
+          ls -lah "$BOOT_DIR"
 
-          else
-            echo "❌ Kernel image tidak ditemukan!"
+          KERNEL=""
+
+          for IMAGE in \
+            "$BOOT_DIR/Image.gz-dtb" \
+            "$BOOT_DIR/Image.gz" \
+            "$BOOT_DIR/Image"; do
+
+            if [ -f "$IMAGE" ]; then
+              KERNEL="$IMAGE"
+              break
+            fi
+
+          done
+
+          if [ -z "$KERNEL" ]; then
+            echo "❌ ERROR: Kernel image not found."
             exit 1
           fi
+
+          echo ""
+          echo "✅ Kernel found:"
+          ls -lh "$KERNEL"
+
+          cp "$KERNEL" "$GITHUB_WORKSPACE/kernel.img"
+
+          echo ""
+          echo "✅ kernel.img copied successfully."
           
       # ==========================================
       # 8. FIND KERNEL IMAGE
