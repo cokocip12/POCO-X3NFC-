@@ -258,11 +258,17 @@ jobs:
             echo ""
             echo "===== COMPILER ERRORS ====="
 
-            grep -Ei \
-              'error:|fatal error:|undefined reference|No such file|No rule to make|recipe for target|make: \*\*\*' \
-              "$BUILD_DIR/build.log" \
-              | tail -100 || true
+            echo ""
+            echo "===== REAL BUILD ERROR ====="
 
+            grep -Ein \
+            'error:|fatal|undefined reference|No such file|No rule to make|recipe for target|make: \*\*\*|Killed|signal|oom|out of memory|No space left|failed|Error [0-9]+|collect2:' \
+           "$BUILD_DIR/build.log" \
+            | tail -150 || true
+    
+            echo ""
+            echo "===== LAST 200 BUILD LOG LINES ====="
+            tail -200 "$BUILD_DIR/build.log"
             echo ""
             echo "===== LAST 100 LOG LINES ====="
 
