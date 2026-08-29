@@ -191,40 +191,115 @@ jobs:
       # ==========================================
       - name: Build Kernel
         working-directory: kernel
-        shell: bash
         run: |
           set -o pipefail
 
+          export ARCH=arm64
+          export SUBARCH=arm64
+
           echo "=========================================="
-          echo "             BUILD KERNEL"
+          echo "        BUILD KERNEL"
           echo "=========================================="
 
-          make -j$(nproc) O="$BUILD_DIR" "$DEFCONFIG"
+          # Pastikan output directory
+          mkdir -p "$BUILD_DIR"
 
-          make -j$(nproc) O="$BUILD_DIR" \
-          2>&1 | tee build.log
+          # ==========================================
+          # LOAD DEFCONFIG
+          # ==========================================
+          echo "Loading Surya defconfig..."
 
-          status=${PIPESTATUS[0]}
+          DEFCONFIG=$(find arch/arm64/configs -type f \
+            \( -iname '*surya*defconfig' -o -iname '*karna*defconfig' \) \
+            | head -n 1)
 
-          echo "===== BUILD ERRORS ====="
-          grep -Ei 'error:|fatal:|undefined reference|No such file|recipe for target|make: \*\*\*' build.log | tail -100 || true
+          if [ -z "$DEFCONFIG" ]; then
+            echo "❌ Surya/Karna defconfig tidak ditemukan!"
+            echo ""
+            echo "Defconfig yang tersedia:"
+            find arch/arm64/configs -maxdepth 1 -type f -name '*defconfig' | sort | head -100
+            exit 1
+          fi
 
-          exit "$status"
+          DEFCONFIG=$(basename "$DEFCONFIG")
+
+          echo "✅ Using defconfig: $DEFCONFIG"
+
+          make O="$BUILD_DIR" "$DEFCONFIG"
+
+          echo ""
+          echo "=========================================="
+          echo "CONFIG CHECK"
+          echo "=========================================="
+
+          test -f "$BUILD_DIR/.config"
+          ls -lh "$BUILD_DIR/.config"
+
+          # ==========================================
+          # BUILD
+          # ==========================================
+          echo ""
+          echo "=========================================="
+          echo "STARTING KERNEL COMPILATION"
+          echo "=========================================="
+
+          set +e
+
+          make -j"$(nproc)" O="$BUILD_DIR" 2>&1 \
+            | tee "$BUILD_DIR/build.log" >/dev/null
+
           BUILD_STATUS=${PIPESTATUS[0]}
 
+          set -e
+
+          # ==========================================
+          # ERROR REPORT
+          # ==========================================
+          if [ "$BUILD_STATUS" -ne 0 ]; then
+            echo ""
+            echo "=========================================="
+            echo "❌ KERNEL BUILD FAILED"
+            echo "=========================================="
+
+            echo ""
+            echo "===== COMPILER ERRORS ====="
+
+            grep -Ei \
+              'error:|fatal error:|undefined reference|No such file|No rule to make|recipe for target|make: \*\*\*' \
+              "$BUILD_DIR/build.log" \
+              | tail -100 || true
+
+            echo ""
+            echo "===== LAST 80 LINES ====="
+            tail -80 "$BUILD_DIR/build.log"
+
+            exit "$BUILD_STATUS"
+          fi
+
           echo ""
           echo "=========================================="
-          echo "          BUILD ERROR SUMMARY"
+          echo "✅ KERNEL BUILD SUCCESS"
           echo "=========================================="
 
-          grep -nEi \
-            'error:|fatal error:|undefined reference|No such file|No rule to make|Error [0-9]+|sub-makel' \
-            "$GITHUB_WORKSPACE/build.log" | tail -100 || true
+          # ==========================================
+          # VERIFY IMAGE
+          # ==========================================
+          if [ -f "$BUILD_DIR/arch/arm64/boot/Image.gz-dtb" ]; then
+            echo "✅ Image.gz-dtb found"
+            ls -lh "$BUILD_DIR/arch/arm64/boot/Image.gz-dtb"
 
-          echo ""
-          echo "Build exit code: $BUILD_STATUS"
+          elif [ -f "$BUILD_DIR/arch/arm64/boot/Image.gz" ]; then
+            echo "✅ Image.gz found"
+            ls -lh "$BUILD_DIR/arch/arm64/boot/Image.gz"
 
-          exit "$BUILD_STATUS"
+          elif [ -f "$BUILD_DIR/arch/arm64/boot/Image" ]; then
+            echo "✅ Image found"
+            ls -lh "$BUILD_DIR/arch/arm64/boot/Image"
+
+          else
+            echo "❌ Kernel image tidak ditemukan!"
+            exit 1
+          fi
           
       # ==========================================
       # 8. FIND KERNEL IMAGE
